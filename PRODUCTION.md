@@ -78,7 +78,53 @@ throughout; both halves are proven on the fork.
 **A starved harvest is not an error.** If the reward balance is briefly below what is
 accrued, `harvest` pays what exists and the rest stays owed rather than reverting.
 
-## 6. Why the audit is the gate
+## 6. Why not OpenZeppelin
+
+An auditor's first question about a custody contract is why it is not the audited library
+version. Here the answer is unusually clean: **OpenZeppelin tells you to build this
+yourself.**
+
+Checked against **OpenZeppelin Contracts v5.7.0**, commit `0742777`, read from source.
+
+`TokenTimelock` was **removed in v5.0** — changelog: *"`TokenTimelock` (in favor of
+`VestingWallet`)"* — along with every escrow contract. What remains is
+`finance/VestingWallet.sol`, and on the exact problem this vault exists to solve it says:
+
+> *"When using this contract with any token whose balance is adjusted automatically (i.e. a
+> rebase token), make sure to account the supply/balance adjustment in the vesting schedule
+> to ensure the vested amount is as intended."*
+
+That is a warning, not a mechanism. LUV is precisely such a token — it reflects upward
+during a transfer — and a `VestingWallet` holding it would be actively wrong, not merely
+unsuitable: its `vestedAmount` is computed against `balanceOf(this) + released()`, so every
+reflection would be treated as *"locked from the beginning"* and **vested away on the
+schedule** instead of paid out as harvestable interest. The reward-index machinery in this
+file is the thing that warning tells you to go and write.
+
+| | OZ `VestingWallet` | `luv_locker` |
+|---|---|---|
+| owner | `Ownable`, transferable | **none** |
+| reflections | vested away on the schedule | **harvestable interest**, principal untouched |
+| tokens sent later | *"partly immediately releasable"* | credited to the index, pro-rata to existing principal |
+| block gate | none (`block.number` appears **zero times**) | **yes**, alongside the time lock |
+| lock shape | linear vesting; `duration = 0` degenerates to a timelock | all-or-nothing at maturity, extend-only |
+| many depositors | one deployment each | one contract, per-account accounting |
+
+Two more of OpenZeppelin's own caveats are worth reading next to this vault:
+
+- *"Since the wallet is {Ownable}, and ownership can be transferred, it is possible to sell
+  unvested tokens."* There is no owner here at all, and `extend_lock` is self-only (audit
+  A1) — in the **live** `LUVLocker` an owner could add ten years to any depositor's lock,
+  repeatedly, which is the hostage mechanism this rewrite removes.
+- *"Any assets transferred to this contract will follow the vesting schedule as if they were
+  locked from the beginning."* Here a stray transfer becomes interest for the existing
+  depositors, and `sweep_foreign` **cannot take LUV at all**.
+
+**The honest summary:** no OpenZeppelin contract could have been used instead. That is not a
+claim this one is better — OpenZeppelin's are audited and this is not, which is the whole of
+§4's last box and of §7 below.
+
+## 7. Why the audit is the gate
 
 D-1 is the argument. A stateful fuzzer written on 2026-08-13 broke `balance >=
 total_principal` by one wei through compound mode — and the consequence was not cosmetic:
