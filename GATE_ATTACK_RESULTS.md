@@ -1,5 +1,13 @@
 # GATE ATTACK — results
 
+> **Update 2026-08-13:** the four AUDIT §7 gaps have since been closed — stateful invariant
+> fuzzing, a real-LUV mainnet-fork rehearsal, the excluded-mid-life test, and a numeric dust
+> bound. The fuzzing found and fixed **D-1 (Low)**. See `AUDIT.md` §2b and §7. luv-locker now
+> runs **63 tests** in the default profile and **6** more on the fork. It is still **not
+> independently audited**, which is the one remaining item and cannot be closed from inside
+> this repository.
+
+
 An adversarial pass at the **time element** of both lockers, run 2026-08-13.
 
 Both vaults make the same promise: *maturity cannot be brought forward by anyone, including

@@ -36,3 +36,20 @@ mainnet = "${MAINNET_RPC_URL}"
 
 [etherscan]
 mainnet = { key = "${ETHERSCAN_API_KEY}" }
+
+# The mainnet-fork rehearsal runs in a CANCUN evm, because mainnet is cancun and the real
+# token it calls into is compiled for it — LUV is solc 0.8.24/cancun, and a PUSH0 in its
+# bytecode is `EvmError: NotActivated` under an older spec. The DEFAULT profile is the
+# bytecode this vault deploys; the rehearsal is a different question, so it gets its own
+# profile rather than one compromise.
+#     make fork-test    (FOUNDRY_PROFILE=fork FORK_TEST=1)
+[profile.fork]
+src = "src"
+out = "out-fork"
+test = "test"
+libs = ["lib"]
+solc_version = "0.8.24"
+optimizer = true
+optimizer_runs = 200
+evm_version = "cancun"
+via_ir = true

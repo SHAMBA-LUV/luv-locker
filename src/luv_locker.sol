@@ -358,6 +358,19 @@ contract luv_locker is guarded {
         if (accumulated > u.reward_debt) {
             uint256 pending = accumulated - u.reward_debt;
             if (u.lock_interest) {
+                // D-1. Compounding moves interest from the reward side into principal, so it
+                // must never move more than the reward side actually holds. The index is a
+                // scaled approximation accumulated across changing values of total_principal,
+                // and it can value a share one wei above the balance backing it; writing that
+                // wei into total_principal broke `balance >= total_principal` and left the
+                // LAST withdrawer unable to take their final wei out — no owner, no rescue,
+                // and total_principal could never return to zero. Found by the stateful
+                // fuzzer (test/luv_locker_invariant.t.sol) and pinned by
+                // test/luv_locker_dust.t.sol. The capped remainder is at most dust and stays
+                // on the reward side, where it benefits every depositor rather than one.
+                uint256 avail = _reward_balance();
+                if (pending > avail) pending = avail;
+                if (pending == 0) { u.reward_debt = accumulated; return; }
                 u.principal += pending;
                 total_principal += pending;
                 // Recompute against the grown principal, or the next settle pays twice.

@@ -34,3 +34,6 @@ deploy:
 
 fmt:
 	forge fmt
+
+fork-test:
+	FOUNDRY_PROFILE=fork FORK_TEST=1 forge test --match-path test/luv_locker_fork.t.sol -vv
