@@ -13,10 +13,10 @@ Principal is locked. Interest never is.
 
 ## Status
 
-Compiles under solc 0.8.24 with `via_ir`. **33 tests, 3 suites, all passing.**
+Compiles under solc 0.8.24 with `via_ir`. **70 tests, 7 suites, all passing**, plus **7** against the real LUV token on a mainnet fork (`make fork-test`).
 Every test is listed with a description and its pass status in [`test.md`](test.md);
 `make testmd` re-runs the suite and fails if that file has drifted from reality.
-`luv_locker` is 5,331 bytes runtime, against the 24,576-byte EIP-170 limit.
+`luv_locker` is 5,723 bytes runtime, against the 24,576-byte EIP-170 limit.
 
 ## Quick start
 

@@ -24,11 +24,14 @@ upgrade path. Do not route the supply lock through it.
 
 ## 2. The test record
 
+2026-10-12: three more findings (H-1 index-inflation DoS, H-2 C-1 residual without fee
+exemption, M-4 stranded deposit-time reflection) found by review and fixed — `AUDIT.md` §2c.
+
 | suite | tests |
 |---|---|
-| default profile | **63** |
-| mainnet fork (`make fork-test`) | **6** |
-| **total** | **69**, 0 failing |
+| default profile | **70** |
+| mainnet fork (`make fork-test`) | **7** |
+| **total** | **77**, 0 failing |
 
 - **7 stateful invariants** at 512 runs × 64 calls = **32,768 calls, zero reverts**.
 - **17 adversarial gate attacks**, including the C-1 attack run for real: a 1-wei deposit
@@ -53,10 +56,9 @@ block delta above the chain's realistic reorg depth.
 
 ## 4. Before real funds
 
-- [ ] `LUV.setFeeExemption(locker, true)` — confirmed on-chain
+- [ ] `LUV.setFeeExemption(locker, true)` — confirmed on-chain (since H-2 the vault refuses every deposit until this is set)
 - [ ] `LUV.setMaxTxExemption(locker, true)` — confirmed on-chain
 - [ ] Locker **not** excluded from reflections — confirmed on-chain
-- [ ] Seed with a LARGE first deposit (audit L-H1: index inflation)
 - [ ] A reflection observed to accrue on a testnet before real funds
 - [ ] **Independent audit**
 

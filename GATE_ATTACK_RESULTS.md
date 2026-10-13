@@ -3,7 +3,7 @@
 > **Update 2026-08-13:** the four AUDIT §7 gaps have since been closed — stateful invariant
 > fuzzing, a real-LUV mainnet-fork rehearsal, the excluded-mid-life test, and a numeric dust
 > bound. The fuzzing found and fixed **D-1 (Low)**. See `AUDIT.md` §2b and §7. luv-locker now
-> runs **63 tests** in the default profile and **6** more on the fork. It is still **not
+> runs **63 tests** in the default profile and **6** more on the fork (2026-10-12: **70** and **7**, after the H-1 / H-2 / M-4 fixes in AUDIT.md §2c). It is still **not
 > independently audited**, which is the one remaining item and cannot be closed from inside
 > this repository.
 

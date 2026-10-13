@@ -106,6 +106,24 @@ then exits every depositor in the worst order.
 
 ---
 
+## 2c. Findings from the 2026-10-12 review — FIXED here
+
+A read-only review of all three LUV lockers (the live `0xe07A…B898`, this rewrite, and the
+`bankonvault/locker` service copy) reproduced each finding below as a passing exploit before
+the fix. The same file run against the fixed source now fails all three attacks.
+
+| ID | Severity | Finding | Fix |
+|---|---|---|---|
+| H-1 | **High→fixed** | First-depositor index inflation, permanent deposit DoS. Deposit 1 wei into an empty vault, send it 1e30 directly, `harvest()` the donation back: net cost 1 wei, `acc_reward_per_principal` = 1e57. Every later `principal * acc` above ~116 LUV overflowed, so every deposit reverted, forever — no owner, monotone index. The old "seed a large first deposit" mitigation lapsed once that seed was withdrawn. Also L-H1. | `_mul_acc(a, b)` computes `floor(a·b / 1e27)` exactly without the intermediate product (split both operands at 1e27). Identical to the old expression wherever that did not overflow; reverts only if the true result exceeds uint256, which an index bounded by supply cannot reach. All five `principal × index` sites use it. |
+| H-2 | **Med→fixed** | C-1 residual when the vault is not fee-exempt. The `min(delta, amount)` cap only separates a mid-deposit reflection when the transfer is fee-free: with LUV's 5% fee, 1000 + a 40 reflection arrives as 990 < amount, the cap does nothing, and the depositor is credited the incumbents' 40. | A fee-paying deposit is refused (`not_fee_exempt`). The vault reads `LUV.isExcludedFromFee(address(this))`; on a token without that view, an arrival short of `amount` is treated as a fee. Fee exemption, already pre-mainnet checklist item 1, is now enforced on-chain. |
+| M-4 | **Med→fixed** | Part of a deposit-time reflection stranded forever. `_accrue()` ran after `total_principal += received`, spreading the flushed surplus over a base that included the newcomer, whose debt was then struck at the new index. Alice (1000) got 10 of a 100 reflection during Bob's 9000 deposit, Bob 0, and 90 LUV stayed locked with no claimant. The code comment claimed the opposite. | The surplus (`delta − amount`) is added to the index over the **pre-deposit** principal, then the new principal joins, then the depositor's existing position is settled, then their debt is struck. A top-up keeps its own share. |
+
+**Regression tests:** `test/luv_locker_review_2026_10.t.sol` (7) — the three attacks, the
+exempt-flush and top-up cases, `_mul_acc` fuzzed against the naive expression and checked
+against Python big-int values beyond it; `test_Fork_NonExemptLockerRefusesDeposits` on the
+real token. `test_DepositCreditsMeasuredDeltaUnderTransferFee` became
+`test_DepositRefusedUnderTransferFee`: crediting a fee-reduced delta is no longer accepted.
+
 ## 3. Properties verified to hold
 
 | Area | Verdict | Test |

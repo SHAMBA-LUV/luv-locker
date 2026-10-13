@@ -3,11 +3,12 @@
 Every test, what it actually proves, and whether it passes.
 
 ```
-forge test    →  33 passed · 0 failed · 0 skipped · 3 suites
+forge test                 →  70 passed · 0 failed · 1 skipped · 8 suites
+FORK_TEST=1 (make fork-test) →  7 passed on real LUV, 2026-10-12
 solc 0.8.24 · via_ir · optimizer 200 · evm_version = paris
 ```
 
-**33 / 33 ✅** — last run 2026-08-05.
+**70 / 70 ✅** — last run 2026-10-12. The 7 mainnet-fork tests are skipped offline, so they carry ☐ here (§3e) and were run separately.
 
 A ✅ means the test was executed and passed, not that it was written. Anything unverified
 is in §5 and carries no checkmark.
@@ -51,7 +52,7 @@ is in §5 and carries no checkmark.
 
 | ✅ | Test | What it proves |
 |:--:|---|---|
-| ✅ | `test_DepositCreditsMeasuredDeltaUnderTransferFee` | Under a 5% fee, principal is 950 — **and `pending_rewards` is 0**. Nominal crediting would make the missing 5% look like reward balance, so the depositor would appear to instantly earn interest they never received |
+| ✅ | `test_DepositRefusedUnderTransferFee` | Under a 5% fee the deposit reverts `not_fee_exempt` and nothing moves. Replaced the old "credit the 950 that arrived" test on 2026-10-12 (H-2): a fee and a mid-deposit reflection in one delta cannot be told apart, so crediting either way can hand one depositor another's interest |
 | ✅ | `test_LuvCanNeverBeSwept` | The deployer is refused. Unclaimed LUV *is* the depositors' interest, so a sweep would be theft with a tidy name |
 | ✅ | `test_ForeignTokenSweepsToTheImmutableSink` | A stranger triggers it, funds go to the immutable sink, the caller gets nothing |
 | ✅ | `test_SweepWithNothingThereReverts` | Nothing to sweep is an error |
@@ -101,6 +102,83 @@ broke solvency would not pass.
 
 ---
 
+## 3a. `test/gate_attack.t.sol` — adversarial gate attacks · 17 ✅
+
+| ✅ | Test | What it proves |
+|:--:|---|---|
+| ✅ | `test_attack_WithdrawOneSecondEarlyFails` | One second before maturity, with every block mined, the time lock still holds |
+| ✅ | `test_attack_WithdrawExactlyAtMaturitySucceeds` | At maturity exactly, principal comes home whole |
+| ✅ | `test_attack_ProposerDriftCannotOpenTheLock` | A proposer's few seconds of timestamp drift do not buy an early exit |
+| ✅ | `test_attack_SecondDepositCannotShortenTheLock` | A second deposit only ever pushes maturity out |
+| ✅ | `test_attack_TopUpRelocksTheWholeBalance` | The documented foot-gun, pinned: a top-up re-locks the whole balance, and only the depositor can do it to themselves |
+| ✅ | `test_attack_CannotRelockAnotherUser` | There is no deposit-for-someone-else, so nobody can re-lock another balance |
+| ✅ | `test_attack_BlockLockHoldsWhenTimeHasPassed` | Time satisfied, blocks not: still shut |
+| ✅ | `test_attack_NoAmountOfTimeSkipsABlock` | No warp, however large, substitutes for mined blocks |
+| ✅ | `test_attack_C1_DustDepositCannotAbsorbAReflection` | C-1 run for real: a 1-wei deposit timed into a 500,000 LUV flush is credited 1 wei; the reflection stays with the depositors who earned it |
+| ✅ | `test_attack_LateDepositorCannotRetroEarn` | A late depositor earns nothing distributed before they arrived |
+| ✅ | `test_attack_NobodyCanExtendAnotherUsersLock` | `extend_lock` acts only on the caller |
+| ✅ | `test_attack_ExtendLockCannotShorten` | An extension earlier than the current maturity reverts |
+| ✅ | `test_attack_ExtendLockCannotExceedTheHorizon` | An extension past `MAX_LOCK_DURATION` reverts |
+| ✅ | `test_attack_CannotWithdrawMoreThanPrincipal` | Over-withdrawal reverts |
+| ✅ | `test_attack_CannotWithdrawSomeoneElsesPrincipal` | Principal is per-address; a stranger cannot take it |
+| ✅ | `test_attack_LuvCanNeverBeSweptOut` | `sweep_foreign(LUV)` reverts for every caller, and principal survives the attempt |
+| ✅ | `test_attack_HarvestDoesNotUnlockPrincipal` | Interest is claimable while principal stays locked, and only by its depositor |
+
+## 3b. `test/luv_locker_dust.t.sol` — index dust and D-1 · 6 ✅
+
+| ✅ | Test | What it proves |
+|:--:|---|---|
+| ✅ | `test_DustPerAccrualIsBelowTheDerivedBound` | The whole supply locked, then a reflection: the undistributed remainder is below `total_principal / 1e27` = 1.11111e8 wei |
+| ✅ | `test_DustStaysInTheVaultAsRewardBalance` | The dust is not destroyed; it stays on the reward side for a later harvest |
+| ✅ | `test_DustDoesNotAccumulateAcrossManyAccruals` | A thousand accruals do not compound the loss into anything meaningful |
+| ✅ | `test_D1_CompoundCanOvercreditPrincipalByDust` | Pins the D-1 behaviour the fuzzer found: compounding could over-credit principal by dust before the cap |
+| ✅ | `test_D1_ShortfallCannotStrandAWithdrawal` | The consequence that decides severity: every depositor exits, in the worst order, and each is paid |
+| ✅ | `test_D1_RealisticScaleExitsCleanly` | The same at realistic scale |
+
+## 3c. `test/luv_locker_invariant.t.sol` — stateful invariants · 7 ✅
+
+512 runs × 64 calls across deposit / reflect / harvest / compound / withdraw / poke.
+
+| ✅ | Test | What it proves |
+|:--:|---|---|
+| ✅ | `invariant_BalanceCoversAllPrincipal` | I1 solvency: principal is always fully backed |
+| ✅ | `invariant_TotalPrincipalIsTheSumOfPrincipals` | I2: the ledger equals the people |
+| ✅ | `invariant_InterestOwedFitsInTheRewardBalance` | I3: interest owed never exceeds the non-principal balance |
+| ✅ | `invariant_IndexIsMonotone` | I4: the index only rises |
+| ✅ | `invariant_LocksOnlyLengthen` | I5: locks only lengthen |
+| ✅ | `invariant_NoPrincipalEscapesALiveLock` | I6: a live lock's principal cannot fall |
+| ✅ | `invariant_NothingIsCreatedOrDestroyed` | I7: every wei is in the vault or in someone's hand; reflections are the only source |
+
+## 3d. `test/luv_locker_review_2026_10.t.sol` — the 2026-10-12 review findings · 7 ✅
+
+Each finding's attack, as the reviewer wrote it, passed against the old source and fails against the fixed one (AUDIT.md §2c).
+
+| ✅ | Test | What it proves |
+|:--:|---|---|
+| ✅ | `test_H1_index_inflation_no_longer_bricks_deposits` | H-1: 1 wei + a 1e30 donation + harvest inflates the index to 1e57; a billion-LUV deposit still succeeds, owes nothing, earns correctly and withdraws whole |
+| ✅ | `testFuzz_H1_mul_acc_matches_naive_where_naive_fits` | `_mul_acc` equals `a*b/1e27` on every input where that does not overflow |
+| ✅ | `test_H1_mul_acc_exact_beyond_naive` | `_mul_acc` is exact past the overflow point, checked against Python big-int values |
+| ✅ | `test_H2_fee_paying_deposit_is_refused` | H-2: with the fee on, the 1000 + 40-reflection attack reverts `not_fee_exempt` |
+| ✅ | `test_H2_exempt_flush_goes_to_incumbent` | With the exemption, a reflection flushing during the attacker's deposit goes wholly to the incumbent; the attacker is credited exactly 1000 |
+| ✅ | `test_M4_deposit_time_reflection_is_not_orphaned` | M-4: Alice gets all 100 of a reflection flushing during Bob's 9000 deposit, Bob 0, and the vault ends empty |
+| ✅ | `test_M4_top_up_keeps_own_share_of_flush` | A top-up keeps its own share of a reflection flushing during it (1000 of 4000 earns a quarter) |
+
+## 3e. `test/luv_locker_fork.t.sol` — the real LUV token · 7, fork only
+
+Skipped by `forge test`; run with `make fork-test` (FOUNDRY_PROFILE=fork, FORK_TEST=1). All 7 passed on 2026-10-12 against mainnet state.
+
+| | Test | What it proves |
+|:--:|---|---|
+| ☐ | `test_Fork_TheRealTokenAndTheRealExemptions` | The token and owner are what we think, and the exemptions took |
+| ☐ | `test_Fork_NonExemptLockerRefusesDeposits` | H-2 on the real token: a locker LUV does not list as fee-exempt refuses deposits, read from `isExcludedFromFee`; once exempted, it accepts |
+| ☐ | `test_Fork_FeeExemptDepositCreditsTheFullAmount` | A fee-exempt deposit of real LUV credits the full amount and comes back whole |
+| ☐ | `test_Fork_RealReflectionsLandOnTheVault` | A genuine reflection, produced through `processFees()`, lands and is claimable as interest |
+| ☐ | `test_Fork_ExcludedMidLife_InterestFreezesPrincipalSurvives` | Excluded mid-life: interest freezes, principal still comes home |
+| ☐ | `test_Fork_ReIncludedAfterExclusionResumesInterest` | Re-included: interest resumes with no repair step |
+| ☐ | `test_Fork_TwoDepositorsSplitARealReflection` | Two depositors at 2:1 split a real reflection pro-rata |
+
+---
+
 ## 4. What changed in the contract because of these tests
 
 C-1 and M-3 were not found by reading. They were found by building a mock that behaves the
@@ -113,12 +191,12 @@ convenient part.
 
 ## 5. Not covered — no checkmark, because it has not been run
 
+The four gaps listed here on 2026-08-05 are closed: stateful invariants (§3c), the real-token
+fork (§3e), exclusion mid-life (§3e), and the dust bound at real supply (§3b).
+
 | | Gap | Why it matters |
 |:--:|---|---|
-| ☐ | Stateful invariant fuzzing across deposit / reflect / harvest / compound / withdraw | Current fuzz is sequential, not adversarially interleaved |
-| ☐ | Fork test against the real LUV token with real exemptions applied | Every token here is a mock, including the improved one |
-| ☐ | Behaviour when the vault is excluded from reflections mid-life | Interest should freeze while principal stays fully withdrawable. Believed true, untested |
-| ☐ | Precision analysis of the 1e27 index at LUV's real supply scale | Index dust is described as "bounded and benign" but never computed |
+| ☐ | Independent audit | Every test here was written by the authors of the contract |
 
 ---
 
@@ -136,7 +214,8 @@ the test's subject.
 ## 7. Reproducing
 
 ```sh
-make test                 # all 33
+make test                 # all 70 (+1 fork suite skipped)
+make fork-test            # the 7 against real LUV
 make audit                # the regression subset
 forge test --match-path 'test/luv_locker_reflect_on_transfer.t.sol' -vvv
 python3 ../scripts/check_test_md.py     # verifies this file against a live run
