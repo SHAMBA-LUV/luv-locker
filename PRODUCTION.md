@@ -29,9 +29,10 @@ exemption, M-4 stranded deposit-time reflection) found by review and fixed — `
 
 | suite | tests |
 |---|---|
-| default profile | **70** |
+| default profile | **75** (70 + 5 for the 200-year horizon) |
 | mainnet fork (`make fork-test`) | **7** |
-| **total** | **77**, 0 failing |
+| **total** | **82**, 0 failing |
+| `make test-200y`: the whole suite against `luv_locker_200y` | **70** + **7** fork, 0 failing |
 
 - **7 stateful invariants** at 512 runs × 64 calls = **32,768 calls, zero reverts**.
 - **17 adversarial gate attacks**, including the C-1 attack run for real: a 1-wei deposit
@@ -50,6 +51,9 @@ forge create src/luv_locker.sol:luv_locker \
   --constructor-args $LUV $LOCK_DURATION $MIN_BLOCK_DELTA $SURPLUS_SINK \
   --rpc-url mainnet --verify
 ```
+
+For the 200-year horizon, deploy `src/luv_locker_200y.sol:luv_locker_200y` with the same
+arguments. Choose before deploying: the horizon is a constant and cannot be changed later.
 
 `LOCK_DURATION` and `MIN_BLOCK_DELTA` are **immutable**. Decide them deliberately; set the
 block delta above the chain's realistic reorg depth.

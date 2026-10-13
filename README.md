@@ -8,15 +8,17 @@ Principal is locked. Interest never is.
 
 | File | License | Purpose |
 |---|---|---|
-| `src/luv_locker.sol` | `Apache-2.0` | reflection pool + principal timelock, ownerless |
+| `src/luv_locker.sol` | `Apache-2.0` | reflection pool + principal timelock, ownerless; locks up to 10 years (the original) |
+| `src/luv_locker_200y.sol` | `Apache-2.0` | the same contract with a 200-year horizon (`MAX_LOCK_DURATION` = 73,050 days, as in liq-locker); nothing else differs |
 | `src/in_house.sol` | `Apache-2.0` | zero-dependency ERC-20 helpers and reentrancy guards |
 
 ## Status
 
-Compiles under solc 0.8.24 with `via_ir`. **70 tests, 7 suites, all passing**, plus **7** against the real LUV token on a mainnet fork (`make fork-test`).
+Compiles under solc 0.8.24 with `via_ir`. **75 tests, 8 suites, all passing**, plus **7** against the real LUV token on a mainnet fork (`make fork-test`).
+`make test-200y` checks that `luv_locker_200y` differs from `luv_locker` only in its horizon, then runs the whole suite against it (70 passed, and the 7 fork tests on real LUV).
 Every test is listed with a description and its pass status in [`test.md`](test.md);
 `make testmd` re-runs the suite and fails if that file has drifted from reality.
-`luv_locker` is 5,723 bytes runtime, against the 24,576-byte EIP-170 limit.
+`luv_locker` is 5,723 bytes runtime and `luv_locker_200y` 5,725, against the 24,576-byte EIP-170 limit.
 
 ## Quick start
 

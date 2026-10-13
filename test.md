@@ -3,12 +3,13 @@
 Every test, what it actually proves, and whether it passes.
 
 ```
-forge test                 →  70 passed · 0 failed · 1 skipped · 8 suites
-FORK_TEST=1 (make fork-test) →  7 passed on real LUV, 2026-10-12
+forge test                 →  75 passed · 0 failed · 1 skipped · 9 suites
+FORK_TEST=1 (make fork-test) →  7 passed on real LUV, 2026-10-13
+make test-200y             →  the 70 again against luv_locker_200y: 70 passed · 1 skipped; fork 7/7
 solc 0.8.24 · via_ir · optimizer 200 · evm_version = paris
 ```
 
-**70 / 70 ✅** — last run 2026-10-12. The 7 mainnet-fork tests are skipped offline, so they carry ☐ here (§3e) and were run separately.
+**75 / 75 ✅** — last run 2026-10-13. The 7 mainnet-fork tests are skipped offline, so they carry ☐ here (§3e) and were run separately.
 
 A ✅ means the test was executed and passed, not that it was written. Anything unverified
 is in §5 and carries no checkmark.
@@ -163,6 +164,18 @@ Each finding's attack, as the reviewer wrote it, passed against the old source a
 | ✅ | `test_M4_deposit_time_reflection_is_not_orphaned` | M-4: Alice gets all 100 of a reflection flushing during Bob's 9000 deposit, Bob 0, and the vault ends empty |
 | ✅ | `test_M4_top_up_keeps_own_share_of_flush` | A top-up keeps its own share of a reflection flushing during it (1000 of 4000 earns a quarter) |
 
+## 3f. `test/luv_locker_200y.t.sol` — the 200-year horizon · 5 ✅
+
+`src/luv_locker_200y.sol` is `luv_locker` with `MAX_LOCK_DURATION` = 73,050 days (200 years) in place of 3,650. The original is kept unchanged. These tests cover only the horizon, mostly side by side with the original. Everything else is shown by `make test-200y`, which checks that the two sources differ only in that constant and then runs the whole suite above against `luv_locker_200y`: 70 passed, 1 skipped offline, and the 7 fork tests passed on real LUV on 2026-10-13.
+
+| ✅ | Test | What it proves |
+|:--:|---|---|
+| ✅ | `test_200y_HorizonIsTwoCenturies` | The horizon is 73,050 days (200 × 365.25), and the original still reads 3,650 |
+| ✅ | `test_200y_ConstructorAcceptsTwoCenturiesRejectsOneSecondMore` | A 200-year `LOCK_DURATION` deploys; one second more is refused; the original refuses the same 200-year argument |
+| ✅ | `test_200y_ExtendPastADecadeOnlyOnTheTwoCenturyLock` | An eleven-year `extend_lock` reverts on the original and lands on the 200-year lock |
+| ✅ | `test_200y_ExtendRejectsBeyondTwoCenturies` | `extend_lock` past now + 200 years reverts `duration_too_long` |
+| ✅ | `test_200y_FullHorizonLockHarvestAndWithdraw` | A full two-century lock: eight reflections over the term are all harvested as interest, the principal is locked one second before the horizon, and it withdraws whole at it |
+
 ## 3e. `test/luv_locker_fork.t.sol` — the real LUV token · 7, fork only
 
 Skipped by `forge test`; run with `make fork-test` (FOUNDRY_PROFILE=fork, FORK_TEST=1). All 7 passed on 2026-10-12 against mainnet state.
@@ -214,7 +227,8 @@ the test's subject.
 ## 7. Reproducing
 
 ```sh
-make test                 # all 70 (+1 fork suite skipped)
+make test                 # all 75 (+1 fork suite skipped)
+make test-200y            # the whole suite again against luv_locker_200y
 make fork-test            # the 7 against real LUV
 make audit                # the regression subset
 forge test --match-path 'test/luv_locker_reflect_on_transfer.t.sol' -vvv
