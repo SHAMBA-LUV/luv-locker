@@ -95,6 +95,21 @@ contract luv_locker_fork_test is Test {
         emit log_named_uint("treasury balance", LUV.balanceOf(TREASURY));
     }
 
+    /// H-2 on the real token: a locker LUV does not list as fee-exempt refuses deposits, read
+    /// straight from LUV.isExcludedFromFee — before any tokens move.
+    function test_Fork_NonExemptLockerRefusesDeposits() public {
+        if (!live) return;
+        luv_locker bare = new luv_locker(address(LUV), LOCK_DURATION, MIN_BLOCK_DELTA, SINK);
+        vm.prank(ALICE); LUV.approve(address(bare), type(uint256).max);
+        vm.prank(ALICE);
+        vm.expectRevert(luv_locker.not_fee_exempt.selector);
+        bare.deposit(1_000e18);
+        vm.prank(LUV.owner()); LUV.setFeeExemption(address(bare), true);
+        vm.prank(ALICE); bare.deposit(1_000e18);
+        (uint256 principal, , , , , , , ) = bare.users(ALICE);
+        assertEq(principal, 1_000e18);
+    }
+
     /**
      * ITEM 2, the core of it. A fee-exempt deposit of the REAL token must credit the FULL
      * amount — no fee taken, no shortfall — and principal must come back whole at maturity.
