@@ -226,15 +226,15 @@ contract luv_locker_test is TimeBase {
     }
 
     // ----------------------------------------------------------------- fee tokens
-    function test_DepositCreditsMeasuredDeltaUnderTransferFee() public {
+    /// H-2: a fee-paying deposit is refused. A fee and a mid-deposit reflection in one
+    /// balance delta cannot be told apart, so crediting either way can misassign interest.
+    function test_DepositRefusedUnderTransferFee() public {
         luv.set_fee_bps(500); // 5%, i.e. the locker is NOT fee-exempt
-        _deposit(alice, 1_000 ether);
-
-        (uint256 principal,,,,,,,) = V.users(alice);
-        assertEq(principal, 950 ether, "credit what arrived, not what was asked");
-        assertEq(V.total_principal(), 950 ether);
-        assertEq(luv.balanceOf(address(V)), 950 ether, "accounting equals reality");
-        assertEq(V.pending_rewards(alice), 0, "the fee must not be mistaken for interest");
+        vm.prank(alice);
+        vm.expectRevert(luv_locker.not_fee_exempt.selector);
+        V.deposit(1_000 ether);
+        assertEq(V.total_principal(), 0);
+        assertEq(luv.balanceOf(address(V)), 0, "the revert returns the tokens");
     }
 
     // --------------------------------------------------------------------- sweeps

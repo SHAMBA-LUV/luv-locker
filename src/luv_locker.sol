@@ -66,6 +66,7 @@ contract luv_locker is guarded {
     error nothing_to_sweep();
     error cannot_sweep_luv();
     error timestamp_overflow();
+    error not_fee_exempt();
 
     // ------------------------------------------------------------------- events
     event deposited(address indexed user, uint256 amount, uint48 unlock_at);
@@ -149,37 +150,47 @@ contract luv_locker is guarded {
         _accrue();
         _settle(msg.sender);
 
-        // Credit what arrived, never what was asked for. LUV takes a fee on some
-        // transfers; crediting the requested amount would push total_principal above
-        // the real balance and the last withdrawer would eat the difference.
+        // H-2 (C-1 residual). The cap below separates a mid-deposit reflection from principal
+        // only when the transfer is fee-free: with LUV's 5% fee, a 1000 deposit plus a 40
+        // reflection arrives as 990 — under `amount`, so a cap would do nothing and the
+        // depositor would be credited 40 of other people's interest. A fee and a reflection
+        // in the same delta cannot be told apart, so a fee-paying deposit is refused outright.
+        // On LUV the exemption is read directly; on a token that does not expose it, an
+        // arrival short of `amount` is the evidence of a fee.
+        if (!_fee_exempt()) revert not_fee_exempt();
         uint256 before = i_erc20_min(LUV).balanceOf(address(this));
         LUV.safe_transfer_from(msg.sender, address(this), amount);
-        uint256 received = i_erc20_min(LUV).balanceOf(address(this)) - before;
-        if (received == 0) revert amount_zero();
+        uint256 delta = i_erc20_min(LUV).balanceOf(address(this)) - before;
+        if (delta < amount) revert not_fee_exempt();
 
         // C-1 (reflection over-credit). LUV rebases UPWARD during a transfer: it runs
         // _processFees at the TOP of _transfer, distributing a pending reflection to every
         // reflection-included holder — this vault among them — before the tokens move. So
-        // the measured delta can EXCEED `amount` by this vault's share of that reflection.
-        // Crediting the raw delta as principal would hand a reflection that belongs to all
-        // existing depositors to whoever deposited last (steal-the-yield; the live vault's
-        // C-1). Cap the credit at what was actually asked; the surplus stays in the reward
-        // balance and is folded into the index by the _accrue below, pro-rata to principal.
-        if (received > amount) received = amount;
+        // the delta can EXCEED `amount` by this vault's share of that reflection. Principal
+        // is exactly `amount`; the surplus is interest earned by the principal already here.
+        uint256 received = amount;
+        uint256 surplus = delta - amount;
+
+        // M-4 (orphaned surplus). Distribute the surplus over the principal that existed when
+        // it was earned — BEFORE the new principal joins the base. Distributing it after
+        // spread it over a base that included the newcomer, whose debt was then struck at the
+        // new index, so the newcomer's slice belonged to nobody and stayed locked forever.
+        if (surplus != 0) {
+            if (total_principal != 0) acc_reward_per_principal += (surplus * ACC_SCALE) / total_principal;
+            last_reward_balance += surplus;
+        }
+        total_principal += received;
+        // Settle the depositor's EXISTING position at the new index, so a top-up keeps its own
+        // share of the surplus. total_principal already includes `received`, so the D-1 cap
+        // in _settle reads a reward balance that excludes this deposit.
+        _settle(msg.sender);
 
         user_info storage u = users[msg.sender];
         u.principal += received;
         u.deposit_block = uint40(block.number);
         uint48 fresh = _now48() + LOCK_DURATION;
         if (fresh > u.unlock_at) u.unlock_at = fresh;
-        total_principal += received;
-
-        // Distribute any rebase-up surplus to the index BEFORE striking this depositor's
-        // debt, so the surplus accrues to the principal that existed when it was earned and
-        // the new depositor's debt is set at the post-distribution index — they do not
-        // retro-earn the reflection that funded their own deposit.
-        _accrue();
-        u.reward_debt = (u.principal * acc_reward_per_principal) / ACC_SCALE;
+        u.reward_debt = _mul_acc(u.principal, acc_reward_per_principal);
 
         _maybe_auto_pay(msg.sender);
         _accrue();
@@ -204,7 +215,7 @@ contract luv_locker is guarded {
 
         u.principal -= amount;
         total_principal -= amount;
-        u.reward_debt = (u.principal * acc_reward_per_principal) / ACC_SCALE;
+        u.reward_debt = _mul_acc(u.principal, acc_reward_per_principal);
 
         LUV.safe_transfer(msg.sender, amount);
         _accrue();
@@ -309,7 +320,7 @@ contract luv_locker is guarded {
         }
         uint256 pending;
         if (u.principal != 0) {
-            uint256 accumulated = (u.principal * acc) / ACC_SCALE;
+            uint256 accumulated = _mul_acc(u.principal, acc);
             if (accumulated > u.reward_debt) pending = accumulated - u.reward_debt;
         }
         // In compound mode pending interest becomes principal, never a claim.
@@ -354,7 +365,7 @@ contract luv_locker is guarded {
             u.reward_debt = 0;
             return;
         }
-        uint256 accumulated = (u.principal * acc_reward_per_principal) / ACC_SCALE;
+        uint256 accumulated = _mul_acc(u.principal, acc_reward_per_principal);
         if (accumulated > u.reward_debt) {
             uint256 pending = accumulated - u.reward_debt;
             if (u.lock_interest) {
@@ -374,7 +385,7 @@ contract luv_locker is guarded {
                 u.principal += pending;
                 total_principal += pending;
                 // Recompute against the grown principal, or the next settle pays twice.
-                accumulated = (u.principal * acc_reward_per_principal) / ACC_SCALE;
+                accumulated = _mul_acc(u.principal, acc_reward_per_principal);
                 emit interest_compounded(user, pending);
             } else {
                 u.accrued += pending;
@@ -413,6 +424,36 @@ contract luv_locker is guarded {
     // top of _transfer), so a reflection can land mid-call. _accrue() distributes that growth
     // to the index; a plain resync would overwrite it and orphan the reflection forever.
     // _accrue() is identical to a resync whenever nothing grew, so it is strictly safer.
+
+    /**
+     * @dev H-1 (index inflation → permanent deposit DoS). `principal * acc` overflowed once
+     *      the index was inflated: deposit 1 wei into an empty vault, send it 1e30 straight,
+     *      harvest the donation back (net cost 1 wei), and `acc` stands at 1e57 — after which
+     *      every deposit above ~116 LUV reverted in its debt line, forever, with no owner to
+     *      reset it. This computes floor(a * b / ACC_SCALE) exactly without the intermediate
+     *      product: with a = ah*S + al and b = bh*S + bl (S = ACC_SCALE),
+     *          a*b/S = ah*bh*S + ah*bl + al*bh + floor(al*bl / S)
+     *      where every other term is an integer, so the floor is exact. al, bl < 1e27 keeps
+     *      al*bl < 1e54. It reverts only when the true RESULT exceeds uint256, which an index
+     *      bounded by the token's supply cannot reach. Identical to the old expression on
+     *      every input that did not overflow.
+     */
+    function _mul_acc(uint256 a, uint256 b) internal pure returns (uint256) {
+        uint256 ah = a / ACC_SCALE;
+        uint256 al = a % ACC_SCALE;
+        uint256 bh = b / ACC_SCALE;
+        uint256 bl = b % ACC_SCALE;
+        return ah * bh * ACC_SCALE + ah * bl + al * bh + (al * bl) / ACC_SCALE;
+    }
+
+    /// @dev LUV exposes isExcludedFromFee(address). A token that does not answers nothing,
+    ///      and the arrival check in deposit stands in for it.
+    function _fee_exempt() internal view returns (bool) {
+        (bool ok, bytes memory ret) =
+            LUV.staticcall(abi.encodeWithSignature("isExcludedFromFee(address)", address(this)));
+        if (!ok || ret.length < 32) return true;
+        return abi.decode(ret, (bool));
+    }
 
     function _now48() internal view returns (uint48) {
         if (block.timestamp > type(uint48).max) revert timestamp_overflow();
