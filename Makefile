@@ -1,10 +1,15 @@
-.PHONY: build test audit testmd gas sizes cov fork deploy fmt
+.PHONY: build test test-200y audit testmd gas sizes cov fork deploy fmt
 
 build:
 	forge build
 
 test:
 	forge test -vvv
+
+# The whole suite again, against luv_locker_200y (the 200-year horizon). Also checks that its
+# source differs from luv_locker only in MAX_LOCK_DURATION.
+test-200y:
+	./script/test_200y.sh
 
 # The properties that must never regress: no owner path to principal, LUV can never
 # be swept, principal always fully backed, measured deltas under transfer fees.
